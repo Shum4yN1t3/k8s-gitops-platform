@@ -1,0 +1,4 @@
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "2"
+resources:
+  - install-nginx.yaml

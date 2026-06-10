@@ -1,0 +1,14 @@
+{{ define "telegram.default.message" }}
+{{ if eq .Status "firing" }}🔥 <b>АЛАРМ [{{ .CommonLabels.severity | toUpper }}]</b>{{ else }}✅ <b>RESOLVED</b>{{ end }}
+
+<b>Алерт:</b> {{ .CommonLabels.alertname }}
+<b>Namespace:</b> {{ if .CommonLabels.namespace }}{{ .CommonLabels.namespace }}{{ else if .CommonLabels.kubernetes_namespace }}{{ .CommonLabels.kubernetes_namespace }}{{ else }}infrastructure{{ end }}
+<b>Объект:</b> <code>{{ if .CommonLabels.pod }}{{ .CommonLabels.pod }}{{ else if .CommonLabels.node }}{{ .CommonLabels.node }}{{ else if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.deployment }}{{ .CommonLabels.deployment }}{{ else if .CommonLabels.daemonset }}{{ .CommonLabels.daemonset }}{{ else }}cluster{{ end }}</code>
+
+<b>Описание:</b> {{ .CommonAnnotations.description }}
+
+<b>Статус:</b> {{ if eq .Status "firing" }}🟥 FIRING{{ else }}🟩 RESOLVED{{ end }}
+<b>Активных:</b> {{ .Alerts.Firing | len }} | <b>Решено:</b> {{ .Alerts.Resolved | len }}
+<b>Начало:</b> {{ (index .Alerts 0).StartsAt.Format "15:04:05 02.01.2006" }} UTC
+{{ if eq .Status "resolved" }}<b>Конец:</b> {{ (index .Alerts 0).EndsAt.Format "15:04:05 02.01.2006" }} UTC{{ end }}
+{{ end }}

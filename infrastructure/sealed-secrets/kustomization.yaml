@@ -1,0 +1,4 @@
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "1"
+resources:
+  - install-sealed-secrets.yaml

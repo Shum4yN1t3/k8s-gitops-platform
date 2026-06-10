@@ -1,0 +1,116 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+data:
+  alertmanager.yml: |
+    global:
+      resolve_timeout: 5m
+
+    templates:
+    - '/etc/alertmanager/templates/*.tmpl'
+
+    # Маршрутизация: critical отправляется сразу, warning — с задержкой
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: 'telegram-warning'
+
+      routes:
+      # Critical — отправляем быстро, повторяем чаще
+      - match:
+          severity: critical
+        receiver: 'telegram-critical'
+        group_wait: 10s
+        group_interval: 1m
+        repeat_interval: 1h
+
+    receivers:
+    - name: 'telegram-critical'
+      telegram_configs:
+      - bot_token: '<TELEGRAM_BOT_TOKEN>'
+        chat_id: <TELEGRAM_CHAT_ID>
+        parse_mode: 'HTML'
+        send_resolved: true
+        message: '{{ template "telegram.default.message" . }}'
+
+    - name: 'telegram-warning'
+      telegram_configs:
+      - bot_token: '<TELEGRAM_BOT_TOKEN>'
+        chat_id: <TELEGRAM_CHAT_ID>
+        parse_mode: 'HTML'
+        send_resolved: true
+        message: '{{ template "telegram.default.message" . }}'
+---
+# ConfigMap для Telegram-шаблона (ранее отсутствовал — alertmanager не мог стартовать)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-templates
+  namespace: monitoring
+data:
+  telegram_alert.tmpl: |
+    {{ define "telegram.default.message" }}
+    {{ if eq .Status "firing" }}🔥 <b>АЛАРМ [{{ .CommonLabels.severity | toUpper }}]</b>{{ else }}✅ <b>RESOLVED</b>{{ end }}
+
+    <b>Алерт:</b> {{ .CommonLabels.alertname }}
+    <b>Namespace:</b> {{ if .CommonLabels.namespace }}{{ .CommonLabels.namespace }}{{ else if .CommonLabels.kubernetes_namespace }}{{ .CommonLabels.kubernetes_namespace }}{{ else }}infrastructure{{ end }}
+    <b>Объект:</b> <code>{{ if .CommonLabels.pod }}{{ .CommonLabels.pod }}{{ else if .CommonLabels.node }}{{ .CommonLabels.node }}{{ else if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.deployment }}{{ .CommonLabels.deployment }}{{ else if .CommonLabels.daemonset }}{{ .CommonLabels.daemonset }}{{ else }}cluster{{ end }}</code>
+
+    <b>Описание:</b> {{ .CommonAnnotations.description }}
+
+    <b>Статус:</b> {{ if eq .Status "firing" }}🟥 FIRING{{ else }}🟩 RESOLVED{{ end }}
+    <b>Активных:</b> {{ .Alerts.Firing | len }} | <b>Решено:</b> {{ .Alerts.Resolved | len }}
+    <b>Начало:</b> {{ (index .Alerts 0).StartsAt.Format "15:04:05 02.01.2006" }} UTC
+    {{ if eq .Status "resolved" }}<b>Конец:</b> {{ (index .Alerts 0).EndsAt.Format "15:04:05 02.01.2006" }} UTC{{ end }}
+    {{ end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  revisionHistoryLimit: 2
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alertmanager
+  template:
+    metadata:
+      labels:
+        app: alertmanager
+    spec:
+      containers:
+      - name: alertmanager
+        image: prom/alertmanager:latest
+        args: ["--config.file=/etc/alertmanager/alertmanager.yml"]
+        ports:
+          - containerPort: 9093
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/alertmanager
+        - name: templates-volume
+          mountPath: /etc/alertmanager/templates
+      volumes:
+      - name: config-volume
+        configMap:
+          name: alertmanager-config
+      - name: templates-volume
+        configMap:
+          name: alertmanager-templates
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alertmanager
+  namespace: monitoring
+spec:
+  selector:
+    app: alertmanager
+  ports:
+    - port: 9093
+      targetPort: 9093

@@ -1,0 +1,21 @@
+resources:
+  - install-metallb.yaml
+  - metallb-pool.yaml
+
+# Этот блок принудительно назначит конфигам волну позже самого движка
+patches:
+  - target:
+      kind: IPAddressPool
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "2"
+  - target:
+      kind: L2Advertisement
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "2"
+
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "1"

@@ -1,0 +1,148 @@
+groups:
+- name: external_probes
+  rules:
+  - alert: ExternalServiceDown
+    expr: probe_success{job=~"blackbox-.*"} == 0
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Сервис недоступен: {{ $labels.instance }}"
+      description: "{{ $labels.instance }} не отвечает (group={{ $labels.probe_group }}) уже 3 минуты."
+
+  - alert: OwnServiceDown
+    expr: probe_success{job="blackbox-own-services"} == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Собственный сервис недоступен: {{ $labels.instance }}"
+      description: "{{ $labels.instance }} не отвечает уже 1 минуту."
+
+  - alert: SlowExternalService
+    expr: probe_duration_seconds{job=~"blackbox-.*"} > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Медленный отклик: {{ $labels.instance }}"
+      description: "{{ $labels.instance }} отвечает {{ $value | printf \"%.2f\" }}s (норма < 5s)."
+
+  - alert: SSLCertExpiringIn14Days
+    expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-.*"} - time()) / 86400 < 14
+    for: 1h
+    labels:
+      severity: warning
+    annotations:
+      summary: "SSL сертификат скоро истекает: {{ $labels.instance }}"
+      description: "Сертификат {{ $labels.instance }} истекает через {{ $value | printf \"%.0f\" }} дней."
+
+  - alert: SSLCertExpiringIn3Days
+    expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-.*"} - time()) / 86400 < 3
+    for: 1h
+    labels:
+      severity: critical
+    annotations:
+      summary: "SSL сертификат истекает через {{ $value | printf \"%.0f\" }} дней: {{ $labels.instance }}"
+      description: "СРОЧНО: сертификат {{ $labels.instance }} истекает через {{ $value | printf \"%.0f\" }} дней."
+
+  - alert: ExternalServiceStatusDegraded
+    expr: status_indicator{job="json-status-pages"} > 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Деградация сервиса: {{ $labels.page }}"
+      description: "{{ $labels.page }} сообщает статус '{{ $labels.indicator }}': {{ $labels.description }}"
+
+  - alert: ExternalServiceStatusCritical
+    expr: status_indicator{job="json-status-pages"} >= 2
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Критический инцидент у {{ $labels.page }}"
+      description: "{{ $labels.page }} сообщает статус '{{ $labels.indicator }}': {{ $labels.description }}"
+
+- name: node_health
+  rules:
+  - alert: NodeExporterDown
+    expr: up{job="node-exporter"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Node Exporter не отвечает на {{ $labels.instance }}"
+      description: "Node Exporter на узле {{ $labels.instance }} не отдаёт метрики более 2 минут."
+
+  - alert: NodeExporterMissing
+    expr: absent(up{job="node-exporter"})
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Node Exporter полностью отсутствует в кластере"
+      description: "Ни один Node Exporter не найден. Мониторинг узлов не работает."
+
+  - alert: NodeHighCpuUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Высокая загрузка CPU на {{ $labels.instance }}"
+      description: "CPU загружен на {{ $value | printf \"%.1f\" }}% более 10 минут."
+
+  - alert: NodeCriticalCpuUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Критическая загрузка CPU на {{ $labels.instance }}"
+      description: "CPU загружен на {{ $value | printf \"%.1f\" }}% более 5 минут."
+
+  - alert: NodeHighMemoryUsage
+    expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Высокое потребление памяти на {{ $labels.instance }}"
+      description: "Используется {{ $value | printf \"%.1f\" }}% RAM."
+
+  - alert: NodeCriticalMemoryUsage
+    expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 95
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Критическое потребление памяти на {{ $labels.instance }}"
+      description: "Используется {{ $value | printf \"%.1f\" }}% RAM. OOM killer может начать убивать процессы."
+
+  - alert: NodeDiskAlmostFull
+    expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 80
+    for: 15m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Диск заполняется на {{ $labels.instance }}"
+      description: "Раздел {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.1f\" }}%."
+
+  - alert: NodeDiskCriticallyFull
+    expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 90
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Диск почти полон на {{ $labels.instance }}"
+      description: "Раздел {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.1f\" }}%."
+
+  - alert: NodeDiskWillFillIn24h
+    expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 24*3600) < 0
+    for: 30m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Диск заполнится в течение 24ч на {{ $labels.instance }}"
+      description: "Раздел {{ $labels.mountpoint }} при текущей скорости записи заполнится в ближайшие 24 часа."

@@ -1,0 +1,12 @@
+regcred.yaml
+kubeseal
+.kube/
+.ansible/
+.cache/
+.docker/
+.ssh/
+.bash_history
+*.key
+*.crt
+*.csr
+*.kubeconfig

@@ -1,0 +1,5 @@
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "3"
+resources:
+  - bind-role-bastion.yml
+  - role-bastion.yml

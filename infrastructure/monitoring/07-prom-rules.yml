@@ -1,0 +1,470 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: monitoring
+data:
+  # ============================================================
+  # 1. NODE HEALTH — здоровье узлов кластера
+  # ============================================================
+  node_health.yml: |
+    groups:
+    - name: node_health
+      rules:
+      # --- Доступность ---
+      - alert: NodeExporterDown
+        expr: up{job="node-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node Exporter не отвечает на {{ $labels.instance }}"
+          description: "Node Exporter на узле {{ $labels.instance }} не отдаёт метрики более 2 минут."
+
+      - alert: NodeExporterMissing
+        expr: absent(up{job="node-exporter"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node Exporter полностью отсутствует в кластере"
+          description: "Ни один Node Exporter не найден. Мониторинг узлов не работает."
+
+      # --- CPU ---
+      - alert: NodeHighCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая загрузка CPU на {{ $labels.instance }}"
+          description: "CPU загружен на {{ $value | printf \"%.1f\" }}% более 10 минут."
+
+      - alert: NodeCriticalCpuUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Критическая загрузка CPU на {{ $labels.instance }}"
+          description: "CPU загружен на {{ $value | printf \"%.1f\" }}% более 5 минут. Срочно нужно вмешательство."
+
+      # --- Memory ---
+      - alert: NodeHighMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое потребление памяти на {{ $labels.instance }}"
+          description: "Используется {{ $value | printf \"%.1f\" }}% RAM. Свободно менее 15%."
+
+      - alert: NodeCriticalMemoryUsage
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Критическое потребление памяти на {{ $labels.instance }}"
+          description: "Используется {{ $value | printf \"%.1f\" }}% RAM. OOM killer может начать убивать процессы."
+
+      # --- Disk ---
+      - alert: NodeDiskAlmostFull
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 80
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск заполняется на {{ $labels.instance }}"
+          description: "Раздел {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.1f\" }}%."
+
+      - alert: NodeDiskCriticallyFull
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Диск почти полон на {{ $labels.instance }}"
+          description: "Раздел {{ $labels.mountpoint }} заполнен на {{ $value | printf \"%.1f\" }}%. Срочно освободите место."
+
+      - alert: NodeDiskWillFillIn24h
+        expr: predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}[6h], 24*3600) < 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Диск заполнится в течение 24ч на {{ $labels.instance }}"
+          description: "Раздел {{ $labels.mountpoint }} при текущей скорости записи заполнится в ближайшие 24 часа."
+
+      # --- Disk I/O ---
+      - alert: NodeHighDiskIOUtilization
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокая нагрузка на диск {{ $labels.device }} на {{ $labels.instance }}"
+          description: "Диск {{ $labels.device }} утилизирован на {{ $value | printf \"%.0f\" }}00%. Возможны замедления I/O."
+
+      # --- Network ---
+      - alert: NodeNetworkErrors
+        expr: rate(node_network_receive_errs_total{device!~"lo|veth.*|cali.*|flannel.*"}[5m]) + rate(node_network_transmit_errs_total{device!~"lo|veth.*|cali.*|flannel.*"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Сетевые ошибки на {{ $labels.instance }}:{{ $labels.device }}"
+          description: "Обнаружено {{ $value | printf \"%.0f\" }} ошибок/сек на интерфейсе {{ $labels.device }}."
+
+      # --- System ---
+      - alert: NodeClockSkew
+        expr: abs(node_timex_offset_seconds) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Рассинхронизация часов на {{ $labels.instance }}"
+          description: "Отклонение часов составляет {{ $value | printf \"%.3f\" }}s. Это может вызвать проблемы с сертификатами и логами."
+
+      - alert: NodeHighLoad
+        expr: node_load15 / count without(cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокий Load Average на {{ $labels.instance }}"
+          description: "15-минутный LA = {{ $value | printf \"%.2f\" }} (в 2 раза превышает кол-во CPU)."
+
+  # ============================================================
+  # 2. KUBERNETES WORKLOADS — поды, деплойменты, джобы
+  # ============================================================
+  kubernetes_workloads.yml: |
+    groups:
+    - name: kubernetes_workloads
+      rules:
+      # --- Pod health ---
+      - alert: PodCrashLooping
+        expr: |
+          (rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3)
+          * on(pod, namespace) group_left(node) kube_pod_info
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} в CrashLoopBackOff"
+          description: "Контейнер {{ $labels.container }} перезапустился {{ $value | printf \"%.0f\" }} раз за 15 минут. Нода: {{ $labels.node }}."
+
+      - alert: PodNotReady
+        expr: |
+          (kube_pod_status_ready{condition="true"} == 0)
+          * on(pod, namespace) group_left(node) kube_pod_info
+          unless on(pod, namespace)
+            kube_pod_status_phase{phase=~"Succeeded|Failed"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} не Ready"
+          description: "Pod не переходит в состояние Ready более 5 минут. Нода: {{ $labels.node }}."
+
+      - alert: ContainerOOMKilled
+        expr: |
+          (kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1)
+          * on(pod, namespace) group_left(node) kube_pod_info
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OOMKilled: {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Контейнер {{ $labels.container }} был убит из-за нехватки памяти. Нода: {{ $labels.node }}."
+
+      - alert: ContainerWaiting
+        expr: |
+          (kube_pod_container_status_waiting_reason{reason!="ContainerCreating"} > 0)
+          * on(pod, namespace) group_left(node) kube_pod_info
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Контейнер {{ $labels.namespace }}/{{ $labels.pod }} завис в ожидании"
+          description: "Контейнер {{ $labels.container }} в состоянии Waiting ({{ $labels.reason }}) более 10 минут. Нода: {{ $labels.node }}."
+
+      # --- Deployments ---
+      - alert: DeploymentReplicasMismatch
+        expr: kube_deployment_spec_replicas != kube_deployment_status_ready_replicas
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} — несоответствие реплик"
+          description: "Ожидается {{ with printf \"kube_deployment_spec_replicas{namespace='%s',deployment='%s'}\" $labels.namespace $labels.deployment }}{{ . }}{{ end }} реплик, готово {{ $value }}."
+
+      - alert: DeploymentGenerationMismatch
+        expr: kube_deployment_status_observed_generation != kube_deployment_metadata_generation
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} не может обновиться"
+          description: "Rollout завис — observedGeneration не совпадает с metadata.generation."
+
+      # --- DaemonSets ---
+      - alert: DaemonSetNotScheduled
+        expr: kube_daemonset_status_desired_number_scheduled - kube_daemonset_status_current_number_scheduled > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} — не все поды запланированы"
+          description: "Часть подов DaemonSet не удаётся разместить на узлах."
+
+      - alert: DaemonSetMisScheduled
+        expr: kube_daemonset_status_number_misscheduled > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DaemonSet {{ $labels.namespace }}/{{ $labels.daemonset }} — поды на неправильных узлах"
+          description: "{{ $value }} подов DaemonSet запущены на узлах, где не должны быть."
+
+      # --- StatefulSets ---
+      - alert: StatefulSetReplicasMismatch
+        expr: kube_statefulset_status_replicas_ready != kube_statefulset_replicas
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} — несоответствие реплик"
+          description: "StatefulSet не может достичь желаемого числа готовых реплик."
+
+      # --- Jobs ---
+      - alert: JobFailed
+        expr: kube_job_status_failed > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} провалился"
+          description: "Kubernetes Job завершился с ошибкой."
+
+      - alert: JobStuck
+        expr: kube_job_status_active == 1 and kube_job_status_start_time < (time() - 3600)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} завис"
+          description: "Job выполняется более 1 часа. Возможно, завис."
+
+  # ============================================================
+  # 3. KUBERNETES NODES (via kube-state-metrics)
+  # ============================================================
+  kubernetes_nodes.yml: |
+    groups:
+    - name: kubernetes_nodes
+      rules:
+      - alert: KubeNodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Узел {{ $labels.node }} не в статусе Ready"
+          description: "Kubernetes узел {{ $labels.node }} не отвечает более 5 минут."
+
+      - alert: KubeNodeDiskPressure
+        expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DiskPressure на узле {{ $labels.node }}"
+          description: "Узел {{ $labels.node }} находится под давлением диска. Kubelet может начать эвакуацию подов."
+
+      - alert: KubeNodeMemoryPressure
+        expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MemoryPressure на узле {{ $labels.node }}"
+          description: "Узел {{ $labels.node }} находится под давлением памяти. Поды могут быть убиты."
+
+      - alert: KubeNodePIDPressure
+        expr: kube_node_status_condition{condition="PIDPressure",status="true"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PIDPressure на узле {{ $labels.node }}"
+          description: "На узле {{ $labels.node }} заканчиваются PID. Новые процессы не смогут быть созданы."
+
+  # ============================================================
+  # 4. CONTAINER RESOURCES — CPU/Memory limits
+  # ============================================================
+  container_resources.yml: |
+    groups:
+    - name: container_resources
+      rules:
+      - alert: ContainerHighCpuThrottling
+        expr: |
+          (
+            sum by(namespace, pod, container) (rate(container_cpu_cfs_throttled_periods_total[5m]))
+            / sum by(namespace, pod, container) (rate(container_cpu_cfs_periods_total[5m])) * 100 > 50
+          )
+          * on(pod, namespace) group_left(node) kube_pod_info
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU throttling {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Контейнер {{ $labels.container }} троттлится на {{ $value | printf \"%.0f\" }}%. Нода: {{ $labels.node }}."
+
+      - alert: ContainerHighMemoryUsage
+        expr: |
+          (
+            (container_memory_working_set_bytes{container!="", container!="POD"}
+            / container_spec_memory_limit_bytes{container!="", container!="POD"} * 100 > 90)
+            and container_spec_memory_limit_bytes{container!="", container!="POD"} > 0
+          )
+          * on(pod, namespace) group_left(node) kube_pod_info
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокое потребление памяти {{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Контейнер {{ $labels.container }} использует {{ $value | printf \"%.0f\" }}% от лимита памяти. Нода: {{ $labels.node }}."
+
+  # ============================================================
+  # 5. APPLICATION MONITORING — неймспейс app
+  # ============================================================
+  app_monitoring.yml: |
+    groups:
+    - name: app_alerts
+      rules:
+      # Используем kube-state-metrics вместо up{} — pod не обязан экспортить метрики
+      - alert: AppNoPods
+        expr: absent(kube_pod_info{namespace="app"}) or count(kube_pod_info{namespace="app"}) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "В namespace app нет ни одного пода"
+          description: "В неймспейсе app не найдено ни одного пода. Приложение полностью отсутствует."
+
+      - alert: AppPodsNotReady
+        expr: |
+          (kube_pod_status_ready{namespace="app", condition="true"} == 0)
+          * on(pod, namespace) group_left(node) kube_pod_info
+          unless on(pod, namespace)
+            kube_pod_status_phase{phase=~"Succeeded|Failed"} > 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} не Ready в namespace app"
+          description: "Pod {{ $labels.pod }} в неймспейсе app не переходит в Ready более 3 минут. Нода: {{ $labels.node }}."
+
+      - alert: AppDeploymentUnavailable
+        expr: kube_deployment_status_available_replicas{namespace="app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Deployment {{ $labels.deployment }} — 0 доступных реплик"
+          description: "Deployment {{ $labels.deployment }} в namespace app не имеет ни одной работающей реплики."
+
+  # ============================================================
+  # 6. MONITORING SELF-HEALTH — мониторинг самого мониторинга
+  # ============================================================
+  self_monitoring.yml: |
+    groups:
+    - name: self_monitoring
+      rules:
+      - alert: PrometheusTargetDown
+        expr: up{job=~"node-exporter|kube-state-metrics|kubernetes-cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus target {{ $labels.job }}/{{ $labels.instance }} недоступен"
+          description: "Scrape target {{ $labels.instance }} (job={{ $labels.job }}) не отвечает."
+
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus не смог перезагрузить конфигурацию"
+          description: "Последняя перезагрузка конфига Prometheus завершилась ошибкой."
+
+      - alert: AlertmanagerConfigReloadFailed
+        expr: alertmanager_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager не смог перезагрузить конфигурацию"
+          description: "Последняя перезагрузка конфига Alertmanager завершилась ошибкой."
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: rate(prometheus_rule_evaluation_failures_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ошибки при оценке правил Prometheus"
+          description: "Prometheus не может оценить одно или несколько правил. Проверьте выражения."
+
+      - alert: AlertmanagerNotificationsFailing
+        expr: rate(alertmanager_notifications_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager не может отправлять уведомления"
+          description: "Уведомления через {{ $labels.integration }} не доставляются. Telegram-бот может быть недоступен."
+
+      - alert: KubeStateMetricsDown
+        expr: absent(up{job="kube-state-metrics"}) or up{job="kube-state-metrics"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kube State Metrics недоступен"
+          description: "Без kube-state-metrics не работают алерты на поды, деплойменты и узлы Kubernetes."
+
+  # ============================================================
+  # ArgoCD — состояние приложений
+  # ============================================================
+  argocd.yml: |
+    groups:
+    - name: argocd
+      rules:
+      - alert: ArgoCDAppHealthDegraded
+        expr: argocd_app_info{health_status="Degraded"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ArgoCD app {{ $labels.name }} health degraded"
+          description: "App {{ $labels.name }} in namespace {{ $labels.dest_namespace }} has been Degraded for more than 2 minutes."
+
+      - alert: ArgoCDAppSyncError
+        expr: increase(argocd_app_sync_total{phase="Error"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ArgoCD app {{ $labels.name }} sync error"
+          description: "App {{ $labels.name }} had a sync error in the last 10 minutes."
+
+      - alert: ArgoCDAppOutOfSync
+        expr: argocd_app_info{sync_status="OutOfSync"} == 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ArgoCD app {{ $labels.name }} out of sync"
+          description: "App {{ $labels.name }} has been OutOfSync for more than 15 minutes."

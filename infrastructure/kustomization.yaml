@@ -1,0 +1,8 @@
+resources:
+  - namespaces.yaml
+  - cert-manager
+  - load-balancer
+  - monitoring
+  - ingress-nginx
+  - sealed-secrets
+  - rbac_claster_user

@@ -1,0 +1,86 @@
+groups:
+- name: app_alerts
+  rules:
+  # Используем kube-state-metrics — pod не обязан экспортить /metrics
+  - alert: AppNoPods
+    expr: absent(kube_pod_info{namespace="app"}) or count(kube_pod_info{namespace="app"}) == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "В namespace app нет ни одного пода"
+      description: "В неймспейсе app не найдено ни одного пода. Приложение полностью отсутствует."
+
+  - alert: AppPodsNotReady
+    expr: kube_pod_status_ready{namespace="app", condition="true"} == 0
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Pod {{ $labels.pod }} не Ready в namespace app"
+      description: "Pod {{ $labels.pod }} в неймспейсе app не переходит в Ready более 3 минут."
+
+  - alert: AppDeploymentUnavailable
+    expr: kube_deployment_status_available_replicas{namespace="app"} == 0
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Deployment {{ $labels.deployment }} — 0 доступных реплик"
+      description: "Deployment {{ $labels.deployment }} в namespace app не имеет ни одной работающей реплики."
+
+- name: kubernetes_workloads
+  rules:
+  - alert: PodCrashLooping
+    expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} в CrashLoopBackOff"
+      description: "Контейнер {{ $labels.container }} перезапустился {{ $value | printf \"%.0f\" }} раз за 15 минут."
+
+  - alert: PodNotReady
+    expr: kube_pod_status_ready{condition="true"} == 0
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} не Ready"
+      description: "Pod не переходит в состояние Ready более 5 минут."
+
+  - alert: ContainerOOMKilled
+    expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+    for: 0m
+    labels:
+      severity: critical
+    annotations:
+      summary: "OOMKilled: {{ $labels.namespace }}/{{ $labels.pod }}"
+      description: "Контейнер {{ $labels.container }} был убит из-за нехватки памяти."
+
+  - alert: DeploymentReplicasMismatch
+    expr: kube_deployment_spec_replicas != kube_deployment_status_ready_replicas
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} — несоответствие реплик"
+      description: "Ожидаемое число реплик не совпадает с готовыми."
+
+  - alert: JobFailed
+    expr: kube_job_status_failed > 0
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Job {{ $labels.namespace }}/{{ $labels.job_name }} провалился"
+      description: "Kubernetes Job завершился с ошибкой."
+
+  - alert: KubeNodeNotReady
+    expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Узел {{ $labels.node }} не в статусе Ready"
+      description: "Kubernetes узел {{ $labels.node }} не отвечает более 5 минут."

@@ -1,0 +1,17 @@
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "5"
+resources:
+  - 01-rbac.yml
+  - 02-config.yml
+  - 03-main-stack.yml
+  - 04-node-exporter.yml
+  - 05-ingress-grafana.yml
+  - 06-alertmanager.yml
+  - 07-prom-rules.yml
+  - 08-loki.yml
+  - 09-promtail.yml
+  - 10-kube-stat-metrics.yaml
+  - 11-blackbox-exporter.yml
+  - 12-json-exporter.yml
+  - grafana-sealed-secret.yaml
+  - promtail-rbac.yml

@@ -1,0 +1,51 @@
+name: Update App Image Tag
+
+on:
+  repository_dispatch:
+    types: [image-update]
+
+jobs:
+  update-deployment:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update image tag in deployment
+        run: |
+          IMAGE_TAG="${{ github.event.client_payload.image_tag }}"
+          echo "Updating image tag to: ${IMAGE_TAG}"
+          sed -i "s|image: ghcr.io/shum4yn1t3/project-test:.*|image: ghcr.io/shum4yn1t3/project-test:${IMAGE_TAG}|" app/deployment.yaml
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add app/deployment.yaml
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: update project-test image to ${{ github.event.client_payload.image_tag }}"
+          git push
+
+      - name: Notify Telegram (Success)
+        if: success()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            k8s updated to <code>${{ github.event.client_payload.image_tag }}</code>
+
+      - name: Notify Telegram (Failure)
+        if: failure()
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            k8s update FAIL <code>${{ github.event.client_payload.image_tag }}</code>
+            <a href="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}">logs</a>

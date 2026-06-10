@@ -1,0 +1,7 @@
+# cert-manager — доверенный системный компонент кластера.
+# default-deny не применяется: cert-manager требует широкого доступа
+# (kube-apiserver, Let's Encrypt ACME, ingress-nginx ClusterIP для HTTP-01 self-check).
+# Ограничение egress у cert-manager ломает выдачу сертификатов без реальной
+# выгоды в безопасности — cert-manager уже имеет права cluster-admin.
+#
+# webhook и cainjector оставлены без ограничений по той же причине.

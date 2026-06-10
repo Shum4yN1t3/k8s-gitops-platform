@@ -1,0 +1,63 @@
+# ResourceQuota для app namespace
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: app-quota
+  namespace: app
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "4"
+    limits.memory: 4Gi
+    pods: "20"
+    services: "10"
+    persistentvolumeclaims: "5"
+---
+# ResourceQuota для monitoring
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: monitoring-quota
+  namespace: monitoring
+spec:
+  hard:
+    requests.cpu: "3"
+    requests.memory: 4Gi
+    limits.cpu: "6"
+    limits.memory: 8Gi
+    pods: "30"
+    services: "15"
+    persistentvolumeclaims: "10"
+---
+# ResourceQuota для vault
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: vault-quota
+  namespace: vault
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    pods: "10"
+    services: "5"
+    persistentvolumeclaims: "3"
+---
+# ResourceQuota для vaultwarden
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: vaultwarden-quota
+  namespace: vaultwarden
+spec:
+  hard:
+    requests.cpu: "500m"
+    requests.memory: 256Mi
+    limits.cpu: "1"
+    limits.memory: 512Mi
+    pods: "5"
+    services: "3"
+    persistentvolumeclaims: "2"

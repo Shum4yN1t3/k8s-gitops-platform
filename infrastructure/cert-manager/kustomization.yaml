@@ -1,0 +1,5 @@
+commonAnnotations:
+  argocd.argoproj.io/sync-wave: "1"
+resources:
+  - cert-manager.yaml
+  - cluster_issuer.yml

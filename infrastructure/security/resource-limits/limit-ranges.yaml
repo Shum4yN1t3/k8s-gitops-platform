@@ -1,0 +1,98 @@
+# LimitRange для app namespace — дефолтные лимиты если не указаны в pod spec
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: app
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+      min:
+        # cert-manager ACME HTTP01 solver создаёт поды с cpu: 10m.
+        # min не может быть выше 10m, иначе solver pod отклоняется LimitRange.
+        cpu: 10m
+        memory: 64Mi
+---
+# LimitRange для monitoring
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: monitoring
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+      min:
+        # cert-manager ACME HTTP01 solver создаёт поды с cpu: 10m.
+        # min не может быть выше 10m, иначе solver pod отклоняется LimitRange
+        # и Let's Encrypt сертификаты не обновляются.
+        cpu: 10m
+        memory: 32Mi
+---
+# LimitRange для vault
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: vault
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "1"
+        memory: 1Gi
+      min:
+        # cert-manager ACME HTTP01 solver создаёт поды с cpu: 10m.
+        # min не может быть выше 10m, иначе solver pod отклоняется LimitRange
+        # и Let's Encrypt сертификаты для vault.example.com не обновляются.
+        cpu: 10m
+        memory: 64Mi
+---
+# LimitRange для vaultwarden
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: vaultwarden
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 256Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "1"
+        memory: 512Mi
+      min:
+        # cert-manager ACME HTTP01 solver создаёт поды с cpu: 10m.
+        # min не может быть выше 10m, иначе solver pod отклоняется LimitRange
+        # и Let's Encrypt сертификаты для warden.example.com не обновляются.
+        cpu: 10m
+        memory: 32Mi

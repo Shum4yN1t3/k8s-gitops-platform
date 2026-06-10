@@ -1,0 +1,210 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+
+    alerting:
+      alertmanagers:
+      - static_configs:
+        - targets:
+          - alertmanager.monitoring.svc.cluster.local:9093
+
+    rule_files:
+      - "/etc/prometheus/rules/*.yml"
+
+    scrape_configs:
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: node-exporter
+          # Заменяем instance (pod IP:9100) на имя ноды (k8master, k8worker2, ...).
+          # __meta_kubernetes_endpoint_node_name берётся из Kubernetes API автоматически
+          # при Service Discovery — новые ноды подхватываются без изменений в конфиге.
+          - source_labels: [__meta_kubernetes_endpoint_node_name]
+            target_label: node
+          - source_labels: [__meta_kubernetes_endpoint_node_name]
+            target_label: instance
+
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: (app|monitoring)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+
+      - job_name: 'kubernetes-cadvisor'
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc.cluster.local:443
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+
+      - job_name: 'kube-state-metrics'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_label_app]
+            action: keep
+            regex: kube-state-metrics
+
+      # ── ArgoCD metrics ──────────────────────────────────────────────────
+      - job_name: 'argocd'
+        static_configs:
+          - targets:
+            - argocd-metrics.argocd.svc.cluster.local:8082
+            - argocd-server-metrics.argocd.svc.cluster.local:8083
+
+      # ── External HTTP/SSL probes via blackbox-exporter ──────────────────
+      - job_name: 'blackbox-own-services'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            # Own cluster services
+            - https://warden.example.com
+            - https://argocd.example.com
+            - https://vault.example.com
+            # User domains
+            - https://www.example.org
+            - https://git.example.org
+            - https://mail.example.org
+            labels:
+              probe_group: own
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+
+      - job_name: 'blackbox-infrastructure'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - https://cloudflare.com
+            - https://one.one.one.one
+            - https://dns.google
+            - https://letsencrypt.org
+            labels:
+              probe_group: infrastructure
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+
+      - job_name: 'blackbox-dev-tools'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - https://github.com
+            - https://gitlab.com
+            - https://hub.docker.com
+            - https://ghcr.io
+            - https://registry.npmjs.org
+            - https://pypi.org
+            - https://rubygems.org
+            - https://crates.io
+            - https://helm.sh
+            labels:
+              probe_group: dev-tools
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+
+      - job_name: 'blackbox-messaging'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - https://telegram.org
+            - https://api.telegram.org
+            - https://discord.com
+            - https://slack.com
+            labels:
+              probe_group: messaging
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+
+      - job_name: 'blackbox-cloud'
+        metrics_path: /probe
+        params:
+          module: [http_2xx]
+        static_configs:
+          - targets:
+            - https://status.aws.amazon.com
+            - https://status.azure.com
+            - https://status.cloud.google.com
+            - https://vercel.com
+            - https://hashicorp.com
+            labels:
+              probe_group: cloud
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+
+      # ── Status page APIs via json-exporter ──────────────────────────────
+      - job_name: 'json-status-pages'
+        metrics_path: /probe
+        params:
+          module: [statuspage]
+        static_configs:
+          - targets:
+            - https://www.cloudflarestatus.com/api/v2/status.json
+            - https://www.githubstatus.com/api/v2/status.json
+            - https://discordstatus.com/api/v2/status.json
+            - https://www.vercel-status.com/api/v2/status.json
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: __param_target
+          - source_labels: [__param_target]
+            target_label: instance
+          - target_label: __address__
+            replacement: json-exporter.monitoring.svc.cluster.local:7979

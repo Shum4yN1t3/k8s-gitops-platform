@@ -1,0 +1,11 @@
+resources:
+  - network-policies/app-netpol.yaml
+  - network-policies/monitoring-netpol.yaml
+  - network-policies/vault-netpol.yaml
+  - network-policies/ingress-nginx-netpol.yaml
+  - network-policies/metallb-netpol.yaml
+  - network-policies/vaultwarden-netpol.yaml
+  - pdb/pdb.yaml
+  - resource-limits/limit-ranges.yaml
+  - resource-limits/resource-quotas.yaml
+  - psa/namespace-labels.yaml

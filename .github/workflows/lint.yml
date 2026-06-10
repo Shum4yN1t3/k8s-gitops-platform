@@ -1,0 +1,107 @@
+name: Lint & Validate Manifests
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+
+jobs:
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint on user-authored manifests
+        run: |
+          yamllint -c .yamllint.yml \
+            app/ \
+            apps/ \
+            argocd/ \
+            infrastructure/monitoring/ \
+            infrastructure/security/ \
+            infrastructure/rbac_claster_user/ \
+            infrastructure/kustomization.yaml \
+            infrastructure/namespaces.yaml
+
+  kubeconform:
+    name: Kubernetes Manifest Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | \
+            tar xz -C /usr/local/bin
+
+      - name: Validate app manifests
+        run: |
+          kubeconform -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -skip SealedSecret,ScaledObject \
+            app/
+
+      - name: Validate ArgoCD application definitions
+        run: |
+          kubeconform -summary \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            -skip Application \
+            -ignore-filename-pattern '.*kustomization.*' \
+            apps/
+
+      - name: Validate monitoring manifests
+        run: |
+          kubeconform -summary \
+            -schema-location default \
+            -skip SealedSecret \
+            -ignore-filename-pattern '.*kustomization.*' \
+            -ignore-filename-pattern '.*rules/.*' \
+            infrastructure/monitoring/
+
+      - name: Validate security manifests
+        run: |
+          kubeconform -summary \
+            -schema-location default \
+            -ignore-filename-pattern '.*kustomization.*' \
+            infrastructure/security/
+
+  kustomize:
+    name: Kustomize Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
+          mv kustomize /usr/local/bin/
+
+      - name: Build infrastructure
+        run: kustomize build infrastructure/ > /dev/null
+
+  notify:
+    name: Notify Telegram
+    runs-on: ubuntu-latest
+    needs: [yamllint, kubeconform, kustomize]
+    if: github.event_name == 'push'
+    steps:
+      - name: Notify on push
+        uses: appleboy/telegram-action@v1.0.0
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: html
+          message: |
+            <b>infra / ${{ github.ref_name }}</b>
+
+            <b>Commit:</b> <code>${{ github.event.head_commit.message }}</code>
+            <b>Author:</b> ${{ github.event.head_commit.author.name }}
+            <b>SHA:</b> <code>${{ github.sha }}</code>
+            <b>CI:</b> all checks passed

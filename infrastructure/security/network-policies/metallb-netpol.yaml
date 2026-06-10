@@ -1,0 +1,112 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metallb-default-deny
+  namespace: metallb-system
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metallb-controller-allow
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app: metallb
+      component: controller
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Webhook calls от kube-apiserver
+    - ports:
+        - protocol: TCP
+          port: 9443
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API server (cert-rotator обновляет caBundle в VWC/CRD).
+    # API server работает с hostNetwork: true, поэтому ни namespaceSelector,
+    # ни ipBlock с ClusterIP 10.96.0.1 не матчатся — после DNAT пакет идёт
+    # на реальный IP мастер-ноды на порт 6443. Нужен ipBlock 0.0.0.0/0.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: metallb-speaker-allow
+  namespace: metallb-system
+spec:
+  podSelector:
+    matchLabels:
+      app: metallb
+      component: speaker
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Memberlist (peer discovery)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: metallb
+              component: speaker
+      ports:
+        - protocol: TCP
+          port: 7946
+        - protocol: UDP
+          port: 7946
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API server (speaker watches services).
+    # См. metallb-controller-allow: нужен ipBlock 0.0.0.0/0 из-за hostNetwork.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # Memberlist peers
+    - to:
+        - podSelector:
+            matchLabels:
+              app: metallb
+              component: speaker
+      ports:
+        - protocol: TCP
+          port: 7946
+        - protocol: UDP
+          port: 7946
