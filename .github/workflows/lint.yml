@@ -63,6 +63,7 @@ jobs:
             -skip SealedSecret \
             -ignore-filename-pattern '.*kustomization.*' \
             -ignore-filename-pattern '.*rules/.*' \
+            -ignore-filename-pattern '.*\.example\.ya?ml' \
             infrastructure/monitoring/
 
       - name: Validate security manifests
@@ -85,23 +86,3 @@ jobs:
 
       - name: Build infrastructure
         run: kustomize build infrastructure/ > /dev/null
-
-  notify:
-    name: Notify Telegram
-    runs-on: ubuntu-latest
-    needs: [yamllint, kubeconform, kustomize]
-    if: github.event_name == 'push'
-    steps:
-      - name: Notify on push
-        uses: appleboy/telegram-action@v1.0.0
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          format: html
-          message: |
-            <b>infra / ${{ github.ref_name }}</b>
-
-            <b>Commit:</b> <code>${{ github.event.head_commit.message }}</code>
-            <b>Author:</b> ${{ github.event.head_commit.author.name }}
-            <b>SHA:</b> <code>${{ github.sha }}</code>
-            <b>CI:</b> all checks passed
