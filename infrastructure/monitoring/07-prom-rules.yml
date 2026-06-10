@@ -468,3 +468,66 @@ data:
         annotations:
           summary: "ArgoCD app {{ $labels.name }} out of sync"
           description: "App {{ $labels.name }} has been OutOfSync for more than 15 minutes."
+
+  # ============================================================
+  # 7. APP SLO — RPS, доля 5xx, латентность project-test
+  # Метрики приложения (см. docs/sessions/2026-03-28_cicd-telegram-app-improvements.md):
+  #   http_requests_total{method,endpoint,status}
+  #   http_request_duration_seconds (гистограмма)
+  # Скрейпятся job'ом kubernetes-pods, поэтому селектор —
+  # {kubernetes_namespace="app", container="project-test"}.
+  # Эти же recording-правила использует canary-анализ Argo Rollouts
+  # (app/analysis-template.yaml) и дашборд Grafana.
+  # ============================================================
+  app_slo.yml: |
+    groups:
+    - name: app_slo
+      rules:
+      # --- Recording rules (SLI) ---
+      - record: app:http_requests:rate5m
+        expr: |
+          sum(rate(http_requests_total{kubernetes_namespace="app", container="project-test"}[5m]))
+
+      - record: app:http_requests_5xx_ratio:rate5m
+        expr: |
+          sum(rate(http_requests_total{kubernetes_namespace="app", container="project-test", status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total{kubernetes_namespace="app", container="project-test"}[5m]))
+
+      - record: app:http_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket{kubernetes_namespace="app", container="project-test"}[5m])))
+
+      - record: app:http_request_duration_seconds:p99_5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le) (rate(http_request_duration_seconds_bucket{kubernetes_namespace="app", container="project-test"}[5m])))
+
+      # --- Alerts ---
+      - alert: AppHigh5xxRatio
+        expr: app:http_requests_5xx_ratio:rate5m > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "project-test: доля 5xx превысила 5%"
+          description: "За последние 5 минут {{ $value | humanizePercentage }} запросов завершаются 5xx."
+
+      - alert: AppHighLatencyP95
+        expr: app:http_request_duration_seconds:p95_5m > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "project-test: p95 латентность выше 500ms"
+          description: "p95 = {{ $value | printf \"%.3f\" }}s за 5-минутное окно."
+
+      - alert: AppHighLatencyP99
+        expr: app:http_request_duration_seconds:p99_5m > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "project-test: p99 латентность выше 1s"
+          description: "p99 = {{ $value | printf \"%.3f\" }}s за 5-минутное окно."
