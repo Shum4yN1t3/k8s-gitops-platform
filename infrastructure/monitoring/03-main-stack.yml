@@ -95,6 +95,12 @@ spec:
         volumeMounts:
         - name: grafana-storage
           mountPath: /var/lib/grafana
+        - name: grafana-datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: grafana-dashboard-providers
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: grafana-dashboard-app-slo
+          mountPath: /var/lib/grafana/dashboards
       securityContext:
         fsGroup: 472
         runAsUser: 472
@@ -104,6 +110,15 @@ spec:
         hostPath:
           path: /mnt/grafana_data
           type: DirectoryOrCreate
+      - name: grafana-datasources
+        configMap:
+          name: grafana-datasources
+      - name: grafana-dashboard-providers
+        configMap:
+          name: grafana-dashboard-providers
+      - name: grafana-dashboard-app-slo
+        configMap:
+          name: grafana-dashboard-app-slo
 ---
 apiVersion: v1
 kind: Service

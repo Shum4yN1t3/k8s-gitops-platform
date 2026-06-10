@@ -13,6 +13,7 @@ resources:
   - 10-kube-stat-metrics.yaml
   - 11-blackbox-exporter.yml
   - 12-json-exporter.yml
+  - 13-grafana-dashboards.yml
   - grafana-sealed-secret.yaml
   - alertmanager-sealed-secret.yaml
   - promtail-rbac.yml

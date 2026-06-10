@@ -1,0 +1,122 @@
+# Файловый provisioning Grafana: датасорс Prometheus и дашборд SLO
+# приложения project-test. Панели построены на recording-правилах
+# app_slo.yml (07-prom-rules.yml) — тех же, что использует canary-анализ
+# Argo Rollouts.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-providers
+  namespace: monitoring
+data:
+  providers.yml: |
+    apiVersion: 1
+    providers:
+      - name: 'platform-dashboards'
+        orgId: 1
+        folder: 'Platform'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-app-slo
+  namespace: monitoring
+data:
+  app-slo.json: |
+    {
+      "uid": "app-slo",
+      "title": "project-test — SLO",
+      "tags": ["app", "slo"],
+      "timezone": "utc",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-3h", "to": "now" },
+      "panels": [
+        {
+          "id": 1,
+          "type": "timeseries",
+          "title": "RPS (rate 5m)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "app:http_requests:rate5m",
+              "legendFormat": "requests/s"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "timeseries",
+          "title": "Доля 5xx (5m окно)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "red", "value": 0.05 }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "app:http_requests_5xx_ratio:rate5m",
+              "legendFormat": "5xx ratio"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "timeseries",
+          "title": "Латентность p95 / p99 (5m окно)",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+          "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "app:http_request_duration_seconds:p95_5m",
+              "legendFormat": "p95"
+            },
+            {
+              "refId": "B",
+              "expr": "app:http_request_duration_seconds:p99_5m",
+              "legendFormat": "p99"
+            }
+          ]
+        }
+      ]
+    }
