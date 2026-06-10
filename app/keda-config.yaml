@@ -5,6 +5,8 @@ metadata:
   namespace: app
 spec:
   scaleTargetRef:
+    apiVersion: argoproj.io/v1alpha1
+    kind: Rollout
     name: project-test
   minReplicaCount: 1
   maxReplicaCount: 5

@@ -1,0 +1,54 @@
+# SLO-анализ canary-выкатки project-test.
+# Запросы используют те же метрики, что recording-правила app_slo.yml
+# (infrastructure/monitoring/07-prom-rules.yml) и дашборд Grafana.
+# Без trafficRouting canary-доля управляется числом реплик, поэтому
+# запросы оценивают SLO workload'а целиком, а не только canary-поды.
+# При len(result) == 0 / NaN (нет трафика) измерение считается успешным,
+# чтобы не блокировать выкатку в пустом окружении.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: project-test-slo
+  namespace: app
+spec:
+  metrics:
+    # Доля 5xx за 5m окно < 5%
+    - name: error-ratio-5xx
+      interval: 1m
+      count: 5
+      # 2 неудачных измерения => AnalysisRun Failed => автоматический rollback
+      failureLimit: 1
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.05
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{kubernetes_namespace="app", container="project-test", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{kubernetes_namespace="app", container="project-test"}[5m]))
+
+    # p95 латентность < 500ms
+    - name: latency-p95
+      interval: 1m
+      count: 5
+      failureLimit: 1
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.5
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_request_duration_seconds_bucket{kubernetes_namespace="app", container="project-test"}[5m])))
+
+    # p99 латентность < 1s
+    - name: latency-p99
+      interval: 1m
+      count: 5
+      failureLimit: 1
+      successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 1
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.99,
+              sum by (le) (rate(http_request_duration_seconds_bucket{kubernetes_namespace="app", container="project-test"}[5m])))

@@ -46,6 +46,14 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+    # Argo Rollouts -> Prometheus (canary-анализ AnalysisTemplate)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argo-rollouts
+      ports:
+        - protocol: TCP
+          port: 9090
   egress:
     # DNS
     - to:
