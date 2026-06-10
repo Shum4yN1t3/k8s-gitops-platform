@@ -5,7 +5,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: admin@example.com
+    email: admin@example.com  # TODO: подставить реальный контактный email для Let's Encrypt
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
     solvers:

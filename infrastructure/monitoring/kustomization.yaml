@@ -14,4 +14,5 @@ resources:
   - 11-blackbox-exporter.yml
   - 12-json-exporter.yml
   - grafana-sealed-secret.yaml
+  - alertmanager-sealed-secret.yaml
   - promtail-rbac.yml

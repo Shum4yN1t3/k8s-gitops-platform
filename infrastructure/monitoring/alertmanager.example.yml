@@ -1,0 +1,50 @@
+# Шаблон конфига Alertmanager. Реальный конфиг содержит Telegram bot_token
+# и chat_id, поэтому деплоится как SealedSecret (alertmanager-sealed-secret.yaml),
+# а не как ConfigMap.
+#
+# Как запечатать новый конфиг:
+#   1. Заполнить <TELEGRAM_BOT_TOKEN> и <TELEGRAM_CHAT_ID>
+#   2. kubectl create secret generic alertmanager-config -n monitoring \
+#        --from-file=alertmanager.yml=alertmanager.yml \
+#        --dry-run=client -o yaml \
+#      | kubeseal --controller-namespace kube-system --format yaml \
+#      > alertmanager-sealed-secret.yaml
+global:
+  resolve_timeout: 5m
+
+templates:
+- '/etc/alertmanager/templates/*.tmpl'
+
+# Маршрутизация: critical отправляется сразу, warning — с задержкой
+route:
+  group_by: ['alertname', 'namespace']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'telegram-warning'
+
+  routes:
+  # Critical — отправляем быстро, повторяем чаще
+  - match:
+      severity: critical
+    receiver: 'telegram-critical'
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 1h
+
+receivers:
+- name: 'telegram-critical'
+  telegram_configs:
+  - bot_token: '<TELEGRAM_BOT_TOKEN>'
+    chat_id: <TELEGRAM_CHAT_ID>
+    parse_mode: 'HTML'
+    send_resolved: true
+    message: '{{ template "telegram.default.message" . }}'
+
+- name: 'telegram-warning'
+  telegram_configs:
+  - bot_token: '<TELEGRAM_BOT_TOKEN>'
+    chat_id: <TELEGRAM_CHAT_ID>
+    parse_mode: 'HTML'
+    send_resolved: true
+    message: '{{ template "telegram.default.message" . }}'

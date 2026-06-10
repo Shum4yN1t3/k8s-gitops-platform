@@ -10,3 +10,9 @@ kubeseal
 *.crt
 *.csr
 *.kubeconfig
+
+# sanitization guard: никаких сырых учётных данных в репо
+*.pem
+*.p12
+kubeconfig*
+*.kubeconfig

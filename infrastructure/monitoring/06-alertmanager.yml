@@ -1,49 +1,6 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: alertmanager-config
-  namespace: monitoring
-data:
-  alertmanager.yml: |
-    global:
-      resolve_timeout: 5m
-
-    templates:
-    - '/etc/alertmanager/templates/*.tmpl'
-
-    # Маршрутизация: critical отправляется сразу, warning — с задержкой
-    route:
-      group_by: ['alertname', 'namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 4h
-      receiver: 'telegram-warning'
-
-      routes:
-      # Critical — отправляем быстро, повторяем чаще
-      - match:
-          severity: critical
-        receiver: 'telegram-critical'
-        group_wait: 10s
-        group_interval: 1m
-        repeat_interval: 1h
-
-    receivers:
-    - name: 'telegram-critical'
-      telegram_configs:
-      - bot_token: '<TELEGRAM_BOT_TOKEN>'
-        chat_id: <TELEGRAM_CHAT_ID>
-        parse_mode: 'HTML'
-        send_resolved: true
-        message: '{{ template "telegram.default.message" . }}'
-
-    - name: 'telegram-warning'
-      telegram_configs:
-      - bot_token: '<TELEGRAM_BOT_TOKEN>'
-        chat_id: <TELEGRAM_CHAT_ID>
-        parse_mode: 'HTML'
-        send_resolved: true
-        message: '{{ template "telegram.default.message" . }}'
+# Конфиг Alertmanager содержит Telegram bot_token/chat_id, поэтому хранится
+# не в ConfigMap, а в SealedSecret (alertmanager-sealed-secret.yaml).
+# Шаблон конфига без секретов — alertmanager.example.yml.
 ---
 # ConfigMap для Telegram-шаблона (ранее отсутствовал — alertmanager не мог стартовать)
 apiVersion: v1
@@ -97,8 +54,8 @@ spec:
           mountPath: /etc/alertmanager/templates
       volumes:
       - name: config-volume
-        configMap:
-          name: alertmanager-config
+        secret:
+          secretName: alertmanager-config
       - name: templates-volume
         configMap:
           name: alertmanager-templates
