@@ -4,7 +4,7 @@
 кластер сейчас синхронизируется с приватным оригиналом. История
 пересобрана с нуля: без учётных данных, реальных IP и доменов.
 
-GitOps-платформа на «голом» Kubernetes (kubeadm, 2 ноды на VPS): ArgoCD
+GitOps-платформа на «голом» Kubernetes (kubeadm, bare metal): ArgoCD
 app-of-apps, полный мониторинг-стек, sealed-secrets, network policies,
 canary-деплой через Argo Rollouts с автоматическим rollback по SLO-метрикам.
 
